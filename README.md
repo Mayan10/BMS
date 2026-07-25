@@ -40,8 +40,8 @@ three times in a row (in case one is missed) and then exits.
 ## Installation
 
 ```bash
-git clone https://github.com/<your-username>/bms-ticket-watcher.git
-cd bms-ticket-watcher
+git clone https://github.com/Mayan10/BMS.git
+cd BMS
 pip install -r requirements.txt
 ```
 
