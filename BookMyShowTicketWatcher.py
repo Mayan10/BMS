@@ -36,13 +36,13 @@ from datetime import datetime
 # The BMS showtimes page for your city/event. Any valid date in the URL
 # works — BMS returns lock/unlock status for the *whole* upcoming week
 # regardless of which date is in the path. See README for how to get this.
-URL = "https://in.bookmyshow.com/movies/<city>/<event-slug>/buytickets/<EVENT-ID>/<any-valid-date>"  # CHANGE-ME
+URL = "https://in.bookmyshow.com/movies/chennai/the-odyssey-imax-2d/buytickets/ET00480917/20260728?etCodes=ET00480917&language=English&refEventCode=ET00480917&__cf_chl_tk=DdMibyqlqYS_t8TqD49Qb0L_WGYW7VW_fi.x8b85_1o-1784962299-1.0.1.1-VdiCU4m8Ln8TJnTKLnouyje4sq6_5fjgjW1KME7uW_Q"  # CHANGE-ME
 
 # The date you're waiting on, in YYYYMMDD format. See README for how to
 # find this in the page source.
 # BMS embeds full booking data server-side as JSON, so we check this
 # precisely instead of guessing at visible page text.
-TARGET_DATE_CODE = "YYYYMMDD"  # CHANGE-ME
+TARGET_DATE_CODE = "20260728"  # CHANGE-ME
 
 # How often to check. Randomized between MIN and MAX on every cycle so
 # requests don't land at a fixed, bot-like cadence BMS could rate-limit
@@ -56,7 +56,7 @@ POLL_INTERVAL_MAX_SECONDS = 10 * 60  # 10 minutes
 # ntfy topics are unauthenticated by default. Don't reuse this example.
 # A good pattern: something-something-<random hex>, e.g. via:
 #   python -c "import secrets; print('bms-' + secrets.token_hex(6))"
-NTFY_TOPIC = "CHANGE-ME-generate-your-own-random-topic"
+NTFY_TOPIC = "bms-0ab157fabe8c"
 
 # ============ END CONFIG ============
 
@@ -78,7 +78,7 @@ def send_notification(
                 f"https://ntfy.sh/{NTFY_TOPIC}",
                 data=message.encode("utf-8"),
                 headers={
-                    "Title": title,
+                    "Title": title.encode("utf-8"),
                     "Priority": priority,
                     "Tags": "rotating_light",
                 },
