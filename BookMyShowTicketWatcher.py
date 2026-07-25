@@ -36,27 +36,32 @@ from datetime import datetime
 # The BMS showtimes page for your city/event. Any valid date in the URL
 # works — BMS returns lock/unlock status for the *whole* upcoming week
 # regardless of which date is in the path. See README for how to get this.
-URL = "https://in.bookmyshow.com/movies/chennai/the-odyssey-imax-2d/buytickets/ET00480917/20260728?etCodes=ET00480917&language=English&refEventCode=ET00480917&__cf_chl_tk=DdMibyqlqYS_t8TqD49Qb0L_WGYW7VW_fi.x8b85_1o-1784962299-1.0.1.1-VdiCU4m8Ln8TJnTKLnouyje4sq6_5fjgjW1KME7uW_Q"  # CHANGE-ME
+URL = "https://in.bookmyshow.com/movies/chennai/the-odyssey-imax-2d/buytickets/ET00480917/20260728"
 
 # The date you're waiting on, in YYYYMMDD format. See README for how to
-# find this in the page source.
-# BMS embeds full booking data server-side as JSON, so we check this
-# precisely instead of guessing at visible page text.
-TARGET_DATE_CODE = "20260728"  # CHANGE-ME
+# find this in the page source. This is only used to build the URL path
+# above — the actual open/closed trigger is TARGET_VENUE_CODE below.
+TARGET_DATE_CODE = "20260728"
+
+# The specific theatre to wait for. Every BMS cinema's own page URL ends in
+# its venue code — e.g. .../pvr-palazzo-the-nexus-vijaya-mall/PVPZ -> PVPZ.
+# Find yours by visiting the cinema's own listing page and copying the last
+# path segment of the URL.
+TARGET_VENUE_CODE = "PVPZ"  # PVR: Palazzo, The Nexus Vijaya Mall
 
 # How often to check. Randomized between MIN and MAX on every cycle so
 # requests don't land at a fixed, bot-like cadence BMS could rate-limit
 # or block. Trade-off: worst case you find out up to POLL_INTERVAL_MAX
 # after tickets actually open, not instantly.
-POLL_INTERVAL_MIN_SECONDS = 5 * 60  # 5 minutes
-POLL_INTERVAL_MAX_SECONDS = 10 * 60  # 10 minutes
+POLL_INTERVAL_MIN_SECONDS = 2 * 60  # 5 minutes
+POLL_INTERVAL_MAX_SECONDS = 4 * 60  # 10 minutes
 
 # Your ntfy.sh topic. Pick your OWN random, unguessable string — anyone
 # who knows this string can read your alerts or publish fake ones, since
 # ntfy topics are unauthenticated by default. Don't reuse this example.
 # A good pattern: something-something-<random hex>, e.g. via:
 #   python -c "import secrets; print('bms-' + secrets.token_hex(6))"
-NTFY_TOPIC = "bms-0ab157fabe8c"
+NTFY_TOPIC = "bms-798f41c01a8c"
 
 # ============ END CONFIG ============
 
@@ -78,6 +83,10 @@ def send_notification(
                 f"https://ntfy.sh/{NTFY_TOPIC}",
                 data=message.encode("utf-8"),
                 headers={
+                    # HTTP headers are Latin-1 by default, but titles here
+                    # may contain emoji — encode to UTF-8 bytes ourselves so
+                    # the underlying http.client doesn't try (and fail) to
+                    # encode the string as Latin-1 when sending.
                     "Title": title.encode("utf-8"),
                     "Priority": priority,
                     "Tags": "rotating_light",
@@ -94,14 +103,12 @@ def send_notification(
 
 
 def check_page() -> bool:
-    """Returns True if TARGET_DATE_CODE's booking window appears open.
+    """Returns True if TARGET_VENUE_CODE has showtimes listed for the date in URL.
 
-    BMS server-renders a JSON blob (window.__INITIAL_STATE__) into the
-    page listing the next 7 days, each tagged with a styleId. Days not
-    yet open for booking are tagged "date-disabled" with no click
-    handler attached. Once a day opens, that flips to "date-default" or
-    "date-selected" with a click handler (cta). We just check whether
-    the disabled marker for our target date is still present.
+    BMS embeds a "venue-card" block (containing a venueCode field) into the
+    page's JSON state for every cinema that currently has showtimes for the
+    selected date. A cinema that hasn't opened bookings yet simply has no
+    venue-card at all, so we just check whether our target venue's card exists.
     """
     try:
         resp = requests.get(URL, headers=HEADERS, timeout=10)
@@ -114,9 +121,9 @@ def check_page() -> bool:
         return False
 
     page = resp.text
-    still_locked_marker = f'"id":"{TARGET_DATE_CODE}","styleId":"date-disabled"'
+    venue_open_marker = f'"venueCode":"{TARGET_VENUE_CODE}"'
 
-    return still_locked_marker not in page
+    return venue_open_marker in page
 
 
 def timestamp() -> str:
@@ -135,6 +142,8 @@ def validate_config():
         problems.append("URL (still has the placeholder / angle brackets)")
     if "CHANGE-ME" in TARGET_DATE_CODE or not TARGET_DATE_CODE.isdigit():
         problems.append("TARGET_DATE_CODE (must be 8 digits, YYYYMMDD)")
+    if "CHANGE-ME" in TARGET_VENUE_CODE or TARGET_VENUE_CODE == "XXXX":
+        problems.append("TARGET_VENUE_CODE (set to your theatre's venue code)")
     if "CHANGE-ME" in NTFY_TOPIC:
         problems.append("NTFY_TOPIC (pick your own random topic name)")
     return problems
