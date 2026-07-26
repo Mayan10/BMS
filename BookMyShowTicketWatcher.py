@@ -8,62 +8,30 @@ Polls a BMS listing page and sends an instant phone push notification
 This script only WATCHES a public page and NOTIFIES you. It does not
 automate the booking/checkout flow — you click and pay yourself.
 
+This version is fully interactive: run it and it asks you for the event
+URL, date, (optionally) a specific theatre, and your ntfy.sh topic — no
+editing the source required. Anyone can just run it and answer the prompts.
+
 Setup:
 1. pip install -r requirements.txt
-2. Install the "ntfy" app on your phone (iOS/Android) and subscribe to
-   YOUR topic (see NTFY_TOPIC below — pick your own, don't reuse examples).
-3. Edit the CONFIG section below for your event.
+2. Install the "ntfy" app on your phone (iOS/Android).
+3. Run: python bms_ticket_watcher.py
+   Answer the prompts (see README.md for how to find the URL / venue code).
 4. Run inside tmux so it survives a closed terminal: `tmux new -s bms`,
    then `python bms_ticket_watcher.py`, then Ctrl+B D to detach.
    Note: tmux does NOT survive the machine itself going to sleep — if
    running on a laptop, disable sleep-on-lid-close and keep it plugged
    in, or run this on an always-on remote/cloud machine instead.
-5. Checks happen every 5-10 minutes (randomized) to avoid a bot-like
-   fixed cadence that BMS could rate-limit or block.
-
-See README.md for full setup instructions, including how to find your
-URL and date code.
+5. Checks happen every few minutes (randomized, you choose the range) to
+   avoid a bot-like fixed cadence that BMS could rate-limit or block.
 """
 
-import requests
+import re
+import sys
 import time
 import random
-import sys
+import requests
 from datetime import datetime
-
-# ============ CONFIG — edit these ============
-
-# The BMS showtimes page for your city/event. Any valid date in the URL
-# works — BMS returns lock/unlock status for the *whole* upcoming week
-# regardless of which date is in the path. See README for how to get this.
-URL = "https://in.bookmyshow.com/movies/chennai/the-odyssey-imax-2d/buytickets/ET00480917/20260728"
-
-# The date you're waiting on, in YYYYMMDD format. See README for how to
-# find this in the page source. This is only used to build the URL path
-# above — the actual open/closed trigger is TARGET_VENUE_CODE below.
-TARGET_DATE_CODE = "20260728"
-
-# The specific theatre to wait for. Every BMS cinema's own page URL ends in
-# its venue code — e.g. .../pvr-palazzo-the-nexus-vijaya-mall/PVPZ -> PVPZ.
-# Find yours by visiting the cinema's own listing page and copying the last
-# path segment of the URL.
-TARGET_VENUE_CODE = "PVPZ"  # PVR: Palazzo, The Nexus Vijaya Mall
-
-# How often to check. Randomized between MIN and MAX on every cycle so
-# requests don't land at a fixed, bot-like cadence BMS could rate-limit
-# or block. Trade-off: worst case you find out up to POLL_INTERVAL_MAX
-# after tickets actually open, not instantly.
-POLL_INTERVAL_MIN_SECONDS = 2 * 60  # 5 minutes
-POLL_INTERVAL_MAX_SECONDS = 4 * 60  # 10 minutes
-
-# Your ntfy.sh topic. Pick your OWN random, unguessable string — anyone
-# who knows this string can read your alerts or publish fake ones, since
-# ntfy topics are unauthenticated by default. Don't reuse this example.
-# A good pattern: something-something-<random hex>, e.g. via:
-#   python -c "import secrets; print('bms-' + secrets.token_hex(6))"
-NTFY_TOPIC = "bms-798f41c01a8c"
-
-# ============ END CONFIG ============
 
 HEADERS = {
     "User-Agent": (
@@ -73,14 +41,104 @@ HEADERS = {
 }
 
 
+# ============ INTERACTIVE SETUP ============
+
+def ask(prompt_text: str, default: str = None, required: bool = True,
+        validator=None, error_msg: str = None) -> str:
+    """Prompt the user, optionally with a default, requirement, and validator."""
+    suffix = f" [{default}]" if default else ""
+    while True:
+        raw = input(f"{prompt_text}{suffix}: ").strip()
+        if not raw and default is not None:
+            raw = default
+        if not raw and not required:
+            return ""
+        if not raw:
+            print("  This is required — please enter a value.")
+            continue
+        if validator and not validator(raw):
+            print(f"  {error_msg or 'Invalid value, try again.'}")
+            continue
+        return raw
+
+
+def strip_query_string(url: str) -> str:
+    """Drop ?query and #fragment parts — BMS sometimes appends Cloudflare
+    challenge tokens etc. that go stale and aren't needed for a plain GET."""
+    return url.split("?", 1)[0].split("#", 1)[0]
+
+
+def guess_date_from_url(url: str):
+    """Try to pull an 8-digit YYYYMMDD date off the end of the URL path."""
+    match = re.search(r"/(\d{8})/?$", strip_query_string(url))
+    return match.group(1) if match else None
+
+
+def get_config() -> dict:
+    print("=== BMS Ticket Watcher — Setup ===")
+    print("Answer a few questions below. Press Enter to accept a [default] where shown.\n")
+
+    print("1) Paste the full BookMyShow ticket page URL for your event.")
+    print("   (Open the movie/event on BookMyShow, click a date, copy the address bar URL.)")
+    raw_url = ask("URL")
+    url = strip_query_string(raw_url)
+
+    guessed_date = guess_date_from_url(url)
+    print("\n2) The date you're waiting on, in YYYYMMDD format.")
+    if guessed_date:
+        print(f"   Detected '{guessed_date}' from your URL — press Enter to use it.")
+    date_code = ask(
+        "Target date (YYYYMMDD)",
+        default=guessed_date,
+        validator=lambda v: v.isdigit() and len(v) == 8,
+        error_msg="Must be exactly 8 digits, e.g. 20260728.",
+    )
+
+    print("\n3) (Optional) Watch ONE specific theatre instead of any theatre in the city.")
+    print("   Every BMS cinema's own page URL ends in its venue code, e.g.")
+    print("   .../pvr-palazzo-the-nexus-vijaya-mall/PVPZ -> PVPZ")
+    print("   Leave blank to alert as soon as ANY theatre opens for this date.")
+    venue_code = ask("Theatre venue code (optional)", required=False)
+
+    print("\n4) Your ntfy.sh topic — pick your OWN random, unguessable string.")
+    print("   Subscribe to this exact string in the ntfy app before running.")
+    print("   Generate one with:")
+    print("     python3 -c \"import secrets; print('bms-' + secrets.token_hex(6))\"")
+    ntfy_topic = ask("ntfy.sh topic")
+
+    print("\n5) (Optional) How often to check, in minutes (randomized between these each cycle).")
+    poll_min = ask(
+        "Minimum minutes between checks", default="5",
+        validator=lambda v: v.isdigit() and int(v) > 0,
+        error_msg="Enter a positive whole number.",
+    )
+    poll_max = ask(
+        "Maximum minutes between checks", default="10",
+        validator=lambda v: v.isdigit() and int(v) >= int(poll_min),
+        error_msg=f"Enter a whole number >= {poll_min}.",
+    )
+
+    print()
+    return {
+        "url": url,
+        "date_code": date_code,
+        "venue_code": venue_code,
+        "ntfy_topic": ntfy_topic,
+        "poll_min_seconds": int(poll_min) * 60,
+        "poll_max_seconds": int(poll_max) * 60,
+    }
+
+
+# ============ CORE LOGIC ============
+
 def send_notification(
-    title: str, message: str, priority: str = "urgent", retries: int = 3
+    topic: str, title: str, message: str, priority: str = "urgent", retries: int = 3
 ):
     """Send a push notification via ntfy.sh, retrying on transient failures."""
     for attempt in range(1, retries + 1):
         try:
             requests.post(
-                f"https://ntfy.sh/{NTFY_TOPIC}",
+                f"https://ntfy.sh/{topic}",
                 data=message.encode("utf-8"),
                 headers={
                     # HTTP headers are Latin-1 by default, but titles here
@@ -102,16 +160,19 @@ def send_notification(
     return False
 
 
-def check_page() -> bool:
-    """Returns True if TARGET_VENUE_CODE has showtimes listed for the date in URL.
+def check_page(url: str, date_code: str, venue_code: str) -> bool:
+    """Returns True once tickets appear open.
 
-    BMS embeds a "venue-card" block (containing a venueCode field) into the
-    page's JSON state for every cinema that currently has showtimes for the
-    selected date. A cinema that hasn't opened bookings yet simply has no
-    venue-card at all, so we just check whether our target venue's card exists.
+    If venue_code is set: True once that theatre's "venueCode" card appears
+    in the page's embedded JSON (theatres with no showtimes yet have no card
+    at all).
+
+    If venue_code is blank: True once the date itself unlocks — BMS marks
+    each of the next 7 days with a styleId; not-yet-open days are tagged
+    "date-disabled" with no click handler until booking opens.
     """
     try:
-        resp = requests.get(URL, headers=HEADERS, timeout=10)
+        resp = requests.get(url, headers=HEADERS, timeout=10)
     except Exception as e:
         print(f"[{timestamp()}] Request failed: {e}")
         return False
@@ -121,51 +182,39 @@ def check_page() -> bool:
         return False
 
     page = resp.text
-    venue_open_marker = f'"venueCode":"{TARGET_VENUE_CODE}"'
 
-    return venue_open_marker in page
+    if venue_code:
+        marker = f'"venueCode":"{venue_code}"'
+        return marker in page
+    else:
+        still_locked_marker = f'"id":"{date_code}","styleId":"date-disabled"'
+        return still_locked_marker not in page
 
 
 def timestamp() -> str:
     return datetime.now().strftime("%H:%M:%S")
 
 
-def next_poll_delay() -> float:
-    """Random delay in seconds between POLL_INTERVAL_MIN/MAX_SECONDS."""
-    return random.uniform(POLL_INTERVAL_MIN_SECONDS, POLL_INTERVAL_MAX_SECONDS)
-
-
-def validate_config():
-    """Check that the placeholder CONFIG values have actually been edited."""
-    problems = []
-    if "CHANGE-ME" in URL or "<" in URL:
-        problems.append("URL (still has the placeholder / angle brackets)")
-    if "CHANGE-ME" in TARGET_DATE_CODE or not TARGET_DATE_CODE.isdigit():
-        problems.append("TARGET_DATE_CODE (must be 8 digits, YYYYMMDD)")
-    if "CHANGE-ME" in TARGET_VENUE_CODE or TARGET_VENUE_CODE == "XXXX":
-        problems.append("TARGET_VENUE_CODE (set to your theatre's venue code)")
-    if "CHANGE-ME" in NTFY_TOPIC:
-        problems.append("NTFY_TOPIC (pick your own random topic name)")
-    return problems
-
-
 def main():
-    problems = validate_config()
-    if problems:
-        print("Edit the CONFIG section at the top of this file first:")
-        for p in problems:
-            print(f"  - {p}")
-        print("\nSee README.md for step-by-step instructions.")
+    try:
+        cfg = get_config()
+    except (KeyboardInterrupt, EOFError):
+        print("\nSetup cancelled.")
         sys.exit(1)
 
-    print(f"Watching: {URL}")
-    print(f"Target date: {TARGET_DATE_CODE}")
+    print(f"Watching: {cfg['url']}")
+    print(f"Target date: {cfg['date_code']}")
+    if cfg["venue_code"]:
+        print(f"Target venue code: {cfg['venue_code']}")
+    else:
+        print("No specific theatre set — will alert as soon as ANY theatre opens for this date.")
     print(
-        f"Polling every {POLL_INTERVAL_MIN_SECONDS // 60}-"
-        f"{POLL_INTERVAL_MAX_SECONDS // 60} min (randomized). Ctrl+C to stop.\n"
+        f"Polling every {cfg['poll_min_seconds'] // 60}-"
+        f"{cfg['poll_max_seconds'] // 60} min (randomized). Ctrl+C to stop.\n"
     )
 
     send_notification(
+        cfg["ntfy_topic"],
         "Watcher started",
         "BMS watcher is now running and will alert you when tickets open.",
         priority="default",
@@ -174,13 +223,14 @@ def main():
     checks = 0
     while True:
         checks += 1
-        open_now = check_page()
+        open_now = check_page(cfg["url"], cfg["date_code"], cfg["venue_code"])
         print(f"[{timestamp()}] Check #{checks} — open: {open_now}")
 
         if open_now:
             print(f"[{timestamp()}] TICKETS OPEN — sending alert!")
             for i in range(3):  # send a few times in case one is missed
                 send_notification(
+                    cfg["ntfy_topic"],
                     "🎟️ Tickets are OPEN!",
                     "Go book now — BookMyShow just went live.",
                     priority="urgent",
@@ -189,7 +239,7 @@ def main():
             print("Stopping watcher — go book your tickets now.")
             break
 
-        delay = next_poll_delay()
+        delay = random.uniform(cfg["poll_min_seconds"], cfg["poll_max_seconds"])
         print(f"[{timestamp()}] Next check in {delay / 60:.1f} min")
         time.sleep(delay)
 
