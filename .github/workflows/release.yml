@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build commit summary since previous tag
+        id: notes
+        run: |
+          current_tag="${GITHUB_REF#refs/tags/}"
+          prev_tag=$(git tag --sort=-creatordate | grep -A1 "^${current_tag}$" | tail -n1)
+
+          {
+            echo "## What's Changed"
+            if [ -n "$prev_tag" ] && [ "$prev_tag" != "$current_tag" ]; then
+              git log "${prev_tag}..${current_tag}" --pretty=format:'- %s (%h)' --no-merges
+            else
+              git log "$current_tag" --pretty=format:'- %s (%h)' --no-merges
+            fi
+          } > release_notes.md
+
+      - name: Create release with commit summary
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          generate_release_notes: true
