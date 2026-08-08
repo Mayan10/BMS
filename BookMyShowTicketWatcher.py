@@ -26,12 +26,15 @@ Setup:
    avoid a bot-like fixed cadence that BMS could rate-limit or block.
 """
 
+from __future__ import annotations
+
+import random
 import re
 import sys
 import time
-import random
-import requests
 from datetime import datetime
+
+import requests
 
 HEADERS = {
     "User-Agent": (
@@ -46,10 +49,10 @@ HEADERS = {
 
 def ask(
     prompt_text: str,
-    default: str = None,
+    default: str | None = None,
     required: bool = True,
     validator=None,
-    error_msg: str = None,
+    error_msg: str | None = None,
 ) -> str:
     """Prompt the user, optionally with a default, requirement, and validator."""
     suffix = f" [{default}]" if default else ""
@@ -169,7 +172,7 @@ def send_notification(
                 timeout=15,
             )
             return True
-        except Exception as e:
+        except requests.RequestException as e:
             print(f"[!] Notification attempt {attempt}/{retries} failed: {e}")
             if attempt < retries:
                 time.sleep(5)
@@ -190,7 +193,7 @@ def check_page(url: str, date_code: str, venue_code: str) -> bool:
     """
     try:
         resp = requests.get(url, headers=HEADERS, timeout=10)
-    except Exception as e:
+    except requests.RequestException as e:
         print(f"[{timestamp()}] Request failed: {e}")
         return False
 
