@@ -6,20 +6,20 @@ Polls a BMS listing page and sends an instant phone push notification
 (via ntfy.sh) the moment the page indicates tickets/booking has opened.
 
 This script only WATCHES a public page and NOTIFIES you. It does not
-automate the booking/checkout flow — you click and pay yourself.
+automate the booking/checkout flow; you click and pay yourself.
 
 This version is fully interactive: run it and it asks you for the event
-URL, date, (optionally) a specific theatre, and your ntfy.sh topic — no
+URL, date, (optionally) a specific theatre, and your ntfy.sh topic, no
 editing the source required. Anyone can just run it and answer the prompts.
 
 Setup:
 1. pip install -r requirements.txt
 2. Install the "ntfy" app on your phone (iOS/Android).
-3. Run: python bms_ticket_watcher.py
+3. Run: python BookMyShowTicketWatcher.py
    Answer the prompts (see README.md for how to find the URL / venue code).
 4. Run inside tmux so it survives a closed terminal: `tmux new -s bms`,
-   then `python bms_ticket_watcher.py`, then Ctrl+B D to detach.
-   Note: tmux does NOT survive the machine itself going to sleep — if
+   then `python BookMyShowTicketWatcher.py`, then Ctrl+B D to detach.
+   Note: tmux does NOT survive the machine itself going to sleep. If
    running on a laptop, disable sleep-on-lid-close and keep it plugged
    in, or run this on an always-on remote/cloud machine instead.
 5. Checks happen every few minutes (randomized, you choose the range) to
@@ -54,7 +54,7 @@ def ask(prompt_text: str, default: str = None, required: bool = True,
         if not raw and not required:
             return ""
         if not raw:
-            print("  This is required — please enter a value.")
+            print("  This is required, please enter a value.")
             continue
         if validator and not validator(raw):
             print(f"  {error_msg or 'Invalid value, try again.'}")
@@ -63,7 +63,7 @@ def ask(prompt_text: str, default: str = None, required: bool = True,
 
 
 def strip_query_string(url: str) -> str:
-    """Drop ?query and #fragment parts — BMS sometimes appends Cloudflare
+    """Drop ?query and #fragment parts. BMS sometimes appends Cloudflare
     challenge tokens etc. that go stale and aren't needed for a plain GET."""
     return url.split("?", 1)[0].split("#", 1)[0]
 
@@ -75,7 +75,7 @@ def guess_date_from_url(url: str):
 
 
 def get_config() -> dict:
-    print("=== BMS Ticket Watcher — Setup ===")
+    print("=== BMS Ticket Watcher Setup ===")
     print("Answer a few questions below. Press Enter to accept a [default] where shown.\n")
 
     print("1) Paste the full BookMyShow ticket page URL for your event.")
@@ -86,7 +86,7 @@ def get_config() -> dict:
     guessed_date = guess_date_from_url(url)
     print("\n2) The date you're waiting on, in YYYYMMDD format.")
     if guessed_date:
-        print(f"   Detected '{guessed_date}' from your URL — press Enter to use it.")
+        print(f"   Detected '{guessed_date}' from your URL, press Enter to use it.")
     date_code = ask(
         "Target date (YYYYMMDD)",
         default=guessed_date,
@@ -100,7 +100,7 @@ def get_config() -> dict:
     print("   Leave blank to alert as soon as ANY theatre opens for this date.")
     venue_code = ask("Theatre venue code (optional)", required=False)
 
-    print("\n4) Your ntfy.sh topic — pick your OWN random, unguessable string.")
+    print("\n4) Your ntfy.sh topic, pick your OWN random, unguessable string.")
     print("   Subscribe to this exact string in the ntfy app before running.")
     print("   Generate one with:")
     print("     python3 -c \"import secrets; print('bms-' + secrets.token_hex(6))\"")
@@ -142,7 +142,7 @@ def send_notification(
                 data=message.encode("utf-8"),
                 headers={
                     # HTTP headers are Latin-1 by default, but titles here
-                    # may contain emoji — encode to UTF-8 bytes ourselves so
+                    # may contain emoji, so encode to UTF-8 bytes ourselves so
                     # the underlying http.client doesn't try (and fail) to
                     # encode the string as Latin-1 when sending.
                     "Title": title.encode("utf-8"),
@@ -156,7 +156,7 @@ def send_notification(
             print(f"[!] Notification attempt {attempt}/{retries} failed: {e}")
             if attempt < retries:
                 time.sleep(5)
-    print("[!] All notification attempts failed — check your network/ntfy.sh manually.")
+    print("[!] All notification attempts failed, check your network/ntfy.sh manually.")
     return False
 
 
@@ -167,7 +167,7 @@ def check_page(url: str, date_code: str, venue_code: str) -> bool:
     in the page's embedded JSON (theatres with no showtimes yet have no card
     at all).
 
-    If venue_code is blank: True once the date itself unlocks — BMS marks
+    If venue_code is blank: True once the date itself unlocks. BMS marks
     each of the next 7 days with a styleId; not-yet-open days are tagged
     "date-disabled" with no click handler until booking opens.
     """
@@ -207,7 +207,7 @@ def main():
     if cfg["venue_code"]:
         print(f"Target venue code: {cfg['venue_code']}")
     else:
-        print("No specific theatre set — will alert as soon as ANY theatre opens for this date.")
+        print("No specific theatre set, will alert as soon as ANY theatre opens for this date.")
     print(
         f"Polling every {cfg['poll_min_seconds'] // 60}-"
         f"{cfg['poll_max_seconds'] // 60} min (randomized). Ctrl+C to stop.\n"
@@ -224,19 +224,19 @@ def main():
     while True:
         checks += 1
         open_now = check_page(cfg["url"], cfg["date_code"], cfg["venue_code"])
-        print(f"[{timestamp()}] Check #{checks} — open: {open_now}")
+        print(f"[{timestamp()}] Check #{checks}, open: {open_now}")
 
         if open_now:
-            print(f"[{timestamp()}] TICKETS OPEN — sending alert!")
+            print(f"[{timestamp()}] TICKETS OPEN, sending alert!")
             for i in range(3):  # send a few times in case one is missed
                 send_notification(
                     cfg["ntfy_topic"],
                     "🎟️ Tickets are OPEN!",
-                    "Go book now — BookMyShow just went live.",
+                    "Go book now, BookMyShow just went live.",
                     priority="urgent",
                 )
                 time.sleep(1)
-            print("Stopping watcher — go book your tickets now.")
+            print("Stopping watcher, go book your tickets now.")
             break
 
         delay = random.uniform(cfg["poll_min_seconds"], cfg["poll_max_seconds"])
