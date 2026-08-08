@@ -2,6 +2,7 @@
 
 [![License: MIT](https://img.shields.io/github/license/Mayan10/BMS)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.7%2B-blue)](https://www.python.org/downloads/)
+[![Lint](https://github.com/Mayan10/BMS/actions/workflows/lint.yml/badge.svg)](https://github.com/Mayan10/BMS/actions/workflows/lint.yml)
 [![Latest release](https://img.shields.io/github/v/release/Mayan10/BMS)](https://github.com/Mayan10/BMS/releases)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](#contributing)
 

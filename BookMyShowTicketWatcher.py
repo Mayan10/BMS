@@ -43,8 +43,14 @@ HEADERS = {
 
 # ============ INTERACTIVE SETUP ============
 
-def ask(prompt_text: str, default: str = None, required: bool = True,
-        validator=None, error_msg: str = None) -> str:
+
+def ask(
+    prompt_text: str,
+    default: str = None,
+    required: bool = True,
+    validator=None,
+    error_msg: str = None,
+) -> str:
     """Prompt the user, optionally with a default, requirement, and validator."""
     suffix = f" [{default}]" if default else ""
     while True:
@@ -76,10 +82,14 @@ def guess_date_from_url(url: str):
 
 def get_config() -> dict:
     print("=== BMS Ticket Watcher Setup ===")
-    print("Answer a few questions below. Press Enter to accept a [default] where shown.\n")
+    print(
+        "Answer a few questions below. Press Enter to accept a [default] where shown.\n"
+    )
 
     print("1) Paste the full BookMyShow ticket page URL for your event.")
-    print("   (Open the movie/event on BookMyShow, click a date, copy the address bar URL.)")
+    print(
+        "   (Open the movie/event on BookMyShow, click a date, copy the address bar URL.)"
+    )
     raw_url = ask("URL")
     url = strip_query_string(raw_url)
 
@@ -94,7 +104,9 @@ def get_config() -> dict:
         error_msg="Must be exactly 8 digits, e.g. 20260728.",
     )
 
-    print("\n3) (Optional) Watch ONE specific theatre instead of any theatre in the city.")
+    print(
+        "\n3) (Optional) Watch ONE specific theatre instead of any theatre in the city."
+    )
     print("   Every BMS cinema's own page URL ends in its venue code, e.g.")
     print("   .../pvr-palazzo-the-nexus-vijaya-mall/PVPZ -> PVPZ")
     print("   Leave blank to alert as soon as ANY theatre opens for this date.")
@@ -106,14 +118,18 @@ def get_config() -> dict:
     print("     python3 -c \"import secrets; print('bms-' + secrets.token_hex(6))\"")
     ntfy_topic = ask("ntfy.sh topic")
 
-    print("\n5) (Optional) How often to check, in minutes (randomized between these each cycle).")
+    print(
+        "\n5) (Optional) How often to check, in minutes (randomized between these each cycle)."
+    )
     poll_min = ask(
-        "Minimum minutes between checks", default="5",
+        "Minimum minutes between checks",
+        default="5",
         validator=lambda v: v.isdigit() and int(v) > 0,
         error_msg="Enter a positive whole number.",
     )
     poll_max = ask(
-        "Maximum minutes between checks", default="10",
+        "Maximum minutes between checks",
+        default="10",
         validator=lambda v: v.isdigit() and int(v) >= int(poll_min),
         error_msg=f"Enter a whole number >= {poll_min}.",
     )
@@ -130,6 +146,7 @@ def get_config() -> dict:
 
 
 # ============ CORE LOGIC ============
+
 
 def send_notification(
     topic: str, title: str, message: str, priority: str = "urgent", retries: int = 3
@@ -207,7 +224,9 @@ def main():
     if cfg["venue_code"]:
         print(f"Target venue code: {cfg['venue_code']}")
     else:
-        print("No specific theatre set, will alert as soon as ANY theatre opens for this date.")
+        print(
+            "No specific theatre set, will alert as soon as ANY theatre opens for this date."
+        )
     print(
         f"Polling every {cfg['poll_min_seconds'] // 60}-"
         f"{cfg['poll_max_seconds'] // 60} min (randomized). Ctrl+C to stop.\n"
